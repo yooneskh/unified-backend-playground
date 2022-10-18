@@ -41,25 +41,37 @@ export class UnifiedWebServer extends UnifiedRouter {
         }
 
 
-        let requestBody = await request.formData();
+        // deno-lint-ignore no-explicit-any
+        let requestBody: any;
+        const requestHeaders = Object.fromEntries(request.headers.entries());
 
-        console.log({ requestBody });
+        if (requestHeaders['content-type'].includes('multipart/form-data')) {
+          requestBody = await request.formData();
+        }
+        else if (requestHeaders['content-type'].includes('application/x-www-form-urlencoded')) {
+          requestBody = Object.fromEntries( (await request.formData()).entries() );
+        }
+        else {
 
-        if (request.headers.get('content-type')?.toLowerCase() === 'application/json') {
-          try {
-            requestBody = JSON.parse(requestBody);
+          requestBody = await request.text();
+
+          if (requestHeaders['content-type'].includes('application/json')) {
+            try {
+              requestBody = JSON.parse(requestBody);
+            }
+            catch {
+              return new Response(`request indicated that content type is json but could not parse body as a json`, {
+                status: 400
+              });
+            }
           }
-          catch {
-            return new Response(`request indicated that content type is json but could not parse body as a json`, {
-              status: 400
-            });
-          }
+
         }
 
 
         const requestContext: IRequestContext = {
           params: patternResult.pathname.groups,
-          headers: Object.fromEntries(request.headers.entries()),
+          headers: requestHeaders,
           queries: Object.fromEntries(new URL(request.url).searchParams.entries()),
           body: requestBody,
         };
