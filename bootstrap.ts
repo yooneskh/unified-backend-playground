@@ -1,4 +1,4 @@
-import { UnifiedWebServer } from './unified-web-server.ts';
+import { UnifiedWebServer } from './deps.ts';
 
 
 const app = new UnifiedWebServer();
