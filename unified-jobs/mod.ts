@@ -1,7 +1,7 @@
 import { PatternEventEmitter } from '../deps.ts';
 
 
-type TWorkStages = 'fresh' | 'active' | 'waiting' | 'finished' | 'rejected';
+type TWorkStages = 'created' | 'activated' | 'hopped' | 'finished' | 'rejected';
 
 export interface IWork {
   _id: string;
@@ -49,12 +49,12 @@ export async function submitWork(type: string, initialContext: Record<string, un
 
   const work: IWork = {
     _id: String(Math.random()),
-    stage: 'fresh',
+    stage: 'created',
     type,
     context: initialContext,
     history: [
       {
-        stage: 'fresh',
+        stage: 'created',
         type,
         context: initialContext,
         createdAt: Date.now(),
@@ -88,24 +88,28 @@ async function processWorkQueue() {
   }
 
 
-  work.stage = 'active';
+  work.stage = 'activated';
 
 
-  const { stage, type, context } = await worker.handler({
+  const context = await worker.handler({
     work,
   });
 
 
-  work.stage = stage;
-  work.type = type;
+  work.stage = 'hopped';
   work.context = context;
 
+  work.type = '' /* getNextWorkType() */;
+
   work.history.push({
-    stage,
-    type,
+    stage: work.stage,
+    type: work.type,
     context,
     createdAt: Date.now(),
   });
 
 
 }
+
+
+// todo: think about job entity, { type: string, workTypes: string[] }
