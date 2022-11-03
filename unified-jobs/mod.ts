@@ -1,17 +1,21 @@
 import { PatternEventEmitter } from '../deps.ts';
 
 
-type TWorkStages = 'created' | 'activated' | 'hopped' | 'finished' | 'rejected';
+type SObject = Record<string, unknown>;
 
-export interface IWork {
+
+type TJobStatuses = 'created' | 'activated' | 'hopped' | 'finished' | 'rejected';
+
+export interface IJob {
   _id: string;
-  stage: TWorkStages;
-  type: string;
-  context: Record<string, unknown>;
-  history: { // fresh and finished should be in this too
-    stage: string;
-    type: string;
-    context: Record<string, unknown>;
+  status: TJobStatuses;
+  work: string;
+  works: string[];
+  context: SObject;
+  history: { // created and finished or rejected should be in this too
+    status: string;
+    work: string;
+    context: SObject;
     createdAt: number;
   }[];
   finished?: boolean;
@@ -24,92 +28,127 @@ export interface IWork {
 }
 
 export interface IWorkerContext {
-  work: IWork;
+  job: IJob;
 }
 
 
-const _eventEmitter = new PatternEventEmitter(false);
-
-const workers: { type: string, handler: (context: IWorkerContext) => Promise<{ stage: TWorkStages, type: string; context: Record<string, unknown>}>}[] = [];
-const workQueue: IWork[] = [];
+const eventEmitter = new PatternEventEmitter(false);
 
 
-// deno-lint-ignore require-await
-export async function registerWorker(type: string, handler: (context: IWorkerContext) => Promise<{ stage: TWorkStages, type: string; context: Record<string, unknown>}>) {
+export interface IWorker {
+  work: string;
+  handler: (context: SObject) => SObject | Promise<SObject>;
+}
 
-  workers.push({ type, handler });
+const workers: IWorker[] = [];
+const jobQueue: IJob[] = [];
 
-  // todo: create a DAG of workers !!!!!!!!!!!
 
+export function registerWorker(worker: IWorker) {
+  workers.push({ ...worker });
 }
 
 
-// deno-lint-ignore require-await no-unused-vars
-export async function submitWork(type: string, initialContext: Record<string, unknown>, onFinish: (work: IWork) => Promise<void>) {
 
-  const work: IWork = {
+export interface IJobSubmission {
+  works: string[];
+  context: SObject;
+  onFinish: (job: IJob) => void | Promise<void>;
+}
+
+export function submitJob({ works, context }: IJobSubmission): Promise<SObject> {
+
+  const initialWork = works[0];
+
+
+  const job: IJob = {
     _id: String(Math.random()),
-    stage: 'created',
-    type,
-    context: initialContext,
+    status: 'created',
+    work: initialWork,
+    works,
+    context,
     history: [
       {
-        stage: 'created',
-        type,
-        context: initialContext,
+        status: 'created',
+        work: initialWork,
+        context,
         createdAt: Date.now(),
       },
     ],
     createdAt: Date.now(),
   };
 
-  // EventHandler.once('work.finished', (work) => {
-  //   if (work.id === createdWork.id) onFinish(work);
-  // })
+  jobQueue.push(job);
 
-  workQueue.push(work);
+
+  return new Promise(resolve => {
+    eventEmitter.once(`job.finished.${job._id}`, (_, finishedJob: IJob) => {
+      if (finishedJob._id === job._id) {
+        resolve(finishedJob.context);
+      }
+    })
+  });
 
 }
 
 
-async function processWorkQueue() {
+async function processJobQueue() {
 
-  const work = workQueue.shift();
+  console.log('processing job queue at', new Date().getMinutes(), new Date().getSeconds());
 
-  if (!work) {
-    return setTimeout(processWorkQueue, 3000);
+  const job = jobQueue.shift();
+
+  if (!job) {
+    return setTimeout(processJobQueue, 5000);
   }
 
 
-  const worker = workers.find(it => it.type === work.type);
+  const worker = workers.find(it => it.work === job.work);
 
   if (!worker) {
-    throw new Error('no worker for this work type ${}');
+    setTimeout(processJobQueue, 5000);
+    throw new Error(`no worker for this job work ${job.work}`);
   }
 
 
-  work.stage = 'activated';
+  job.status = 'activated';
+
+  const context = await worker.handler(job.context);
 
 
-  const context = await worker.handler({
-    work,
-  });
+  job.context = context;
 
 
-  work.stage = 'hopped';
-  work.context = context;
+  const nextWork = job.works[ job.history.length ];
 
-  work.type = '' /* getNextWorkType() */;
+  if (nextWork) {
 
-  work.history.push({
-    stage: work.stage,
-    type: work.type,
+    job.status = 'hopped';
+    job.work = nextWork;
+
+    jobQueue.push(job);
+
+  }
+  else {
+    job.status = 'finished';
+  }
+
+
+  job.history.push({
+    status: job.status,
+    work: job.work,
     context,
     createdAt: Date.now(),
   });
 
+  eventEmitter.emit(`job.${job.status}.${job._id}`, job)
+
+
+  setTimeout(processJobQueue, 5000);
 
 }
 
 
-// todo: think about job entity, { type: string, workTypes: string[] }
+export function startJobQueue() {
+  setTimeout(processJobQueue, 0);
+}
