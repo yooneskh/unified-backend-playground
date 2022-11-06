@@ -4,30 +4,11 @@ startJobQueue();
 
 
 registerWorker({
-  work: 'say-hello',
-  handler(context) {
-
-    console.log(`hello ${context.name}`, context);
-
+  work: 'ping',
+  handler() {
     return {
-      ...context,
-      hello: `hello ${context.name}`,
+      message: 'pong',
     };
-
-  },
-});
-
-registerWorker({
-  work: 'say-bye',
-  handler(context) {
-
-    console.log(`bye ${context.name}`, context);
-
-    return {
-      ...context,
-      bye: `bye ${context.name}`,
-    };
-
   },
 });
 
@@ -38,24 +19,12 @@ const app = new UnifiedWebServer();
 
 
 app.route({
-  method: 'post',
-  path: '/hello/:name',
-  handler: (_, context) => Response.json(context),
-});
-
-app.route({
   method: 'get',
-  path: '/hello/:name',
-  async handler(_, context) {
+  path: '/ping',
+  async handler(_, _context) {
 
     const result = await submitJob({
-      works: ['say-hello', 'say-bye'],
-      context: {
-        name: context.params['name'],
-      },
-      onFinish(job) {
-        console.log('job was finished', job);
-      }
+      works: ['ping'],
     });
 
     return Response.json(result);

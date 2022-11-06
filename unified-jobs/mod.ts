@@ -27,21 +27,15 @@ export interface IJob {
   updatedAt?: number;
 }
 
-export interface IWorkerContext {
-  job: IJob;
-}
-
-
-const eventEmitter = new PatternEventEmitter(false);
-
-
 export interface IWorker {
   work: string;
   handler: (context: SObject) => SObject | Promise<SObject>;
 }
 
+
 const workers: IWorker[] = [];
 const jobQueue: IJob[] = [];
+const eventEmitter = new PatternEventEmitter(false);
 
 
 export function registerWorker(worker: IWorker) {
@@ -49,72 +43,85 @@ export function registerWorker(worker: IWorker) {
 }
 
 
-
 export interface IJobSubmission {
   works: string[];
-  context: SObject;
-  onFinish: (job: IJob) => void | Promise<void>;
+  context?: SObject;
 }
 
 export function submitJob({ works, context }: IJobSubmission): Promise<SObject> {
 
-  const initialWork = works[0];
-
-
   const job: IJob = {
-    _id: String(Math.random()),
+    _id: String(Math.random()).slice(3),
     status: 'created',
-    work: initialWork,
+    work: works[0],
     works,
-    context,
+    context: context ?? {},
     history: [
       {
         status: 'created',
-        work: initialWork,
-        context,
+        work: works[0],
+        context: context ?? {},
         createdAt: Date.now(),
       },
     ],
     createdAt: Date.now(),
   };
 
+
   jobQueue.push(job);
 
 
   return new Promise(resolve => {
+
     eventEmitter.once(`job.finished.${job._id}`, (_, finishedJob: IJob) => {
-      if (finishedJob._id === job._id) {
-        resolve(finishedJob.context);
-      }
-    })
+      resolve(finishedJob.context);
+    });
+
+    processJobQueue();
+
   });
 
 }
 
 
-async function processJobQueue() {
-
-  console.log('processing job queue at', new Date().getMinutes(), new Date().getSeconds());
+function processJobQueue() {
 
   const job = jobQueue.shift();
 
   if (!job) {
-    return setTimeout(processJobQueue, 5000);
-  }
-
-
-  const worker = workers.find(it => it.work === job.work);
-
-  if (!worker) {
-    setTimeout(processJobQueue, 5000);
-    throw new Error(`no worker for this job work ${job.work}`);
+    return;
   }
 
 
   job.status = 'activated';
 
-  const context = await worker.handler(job.context);
+  processJob(job);
 
+}
+
+async function processJob(job: IJob) {
+
+  const worker = workers.find(it => it.work === job.work);
+
+  if (!worker) {
+
+    job.status = 'rejected';
+    job.rejectedAt = Date.now();
+    job.rejectedFor = `No worker for this work ${job.work}`;
+
+    job.history.push({
+      status: job.status,
+      work: job.work,
+      context: job.context,
+      createdAt: Date.now(),
+    });
+
+    return;
+
+  }
+
+
+  const context = await worker.handler(job.context);
 
   job.context = context;
 
@@ -141,10 +148,8 @@ async function processJobQueue() {
     createdAt: Date.now(),
   });
 
-  eventEmitter.emit(`job.${job.status}.${job._id}`, job)
-
-
-  setTimeout(processJobQueue, 5000);
+  eventEmitter.emit(`job.${job.status}.${job._id}`, job);
+  processJobQueue();
 
 }
 
