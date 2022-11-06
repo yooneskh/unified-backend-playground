@@ -1,7 +1,9 @@
 import { PatternEventEmitter } from '../deps.ts';
 
 
-type SObject = Record<string, unknown>;
+export interface IWorkContext {
+  [property: string]: unknown;
+}
 
 
 type TJobStatuses = 'created' | 'activated' | 'hopped' | 'finished' | 'rejected';
@@ -11,11 +13,11 @@ export interface IJob {
   status: TJobStatuses;
   work: string;
   works: string[];
-  context: SObject;
+  context: IWorkContext;
   history: { // created and finished or rejected should be in this too
     status: string;
     work: string;
-    context: SObject;
+    context: IWorkContext;
     createdAt: number;
   }[];
   finished?: boolean;
@@ -29,7 +31,7 @@ export interface IJob {
 
 export interface IWorker {
   work: string;
-  handler: (context: SObject) => SObject | Promise<SObject>;
+  handler: (context: IWorkContext) => IWorkContext | Promise<IWorkContext>;
 }
 
 
@@ -45,10 +47,10 @@ export function registerWorker(worker: IWorker) {
 
 export interface IJobSubmission {
   works: string[];
-  context?: SObject;
+  context?: IWorkContext;
 }
 
-export function submitJob({ works, context }: IJobSubmission): Promise<SObject> {
+export function submitJob({ works, context }: IJobSubmission): Promise<IWorkContext> {
 
   const job: IJob = {
     _id: String(Math.random()).slice(3),
@@ -71,11 +73,20 @@ export function submitJob({ works, context }: IJobSubmission): Promise<SObject> 
   jobQueue.push(job);
 
 
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
 
-    eventEmitter.once(`job.finished.${job._id}`, (_, finishedJob: IJob) => {
-      resolve(finishedJob.context);
-    });
+    const resolver = (_: string, doneJob: IJob) => {
+      eventEmitter.clearCallback(rejecter);
+      resolve(doneJob.context);
+    };
+
+    const rejecter = (_: string, doneJob: IJob) => {
+      eventEmitter.clearCallback(resolver);
+      reject(doneJob.context);
+    };
+
+    eventEmitter.once(`job.finished.${job._id}`, resolver);
+    eventEmitter.once(`job.rejected.${job._id}`, rejecter);
 
     processJobQueue();
 
@@ -121,9 +132,9 @@ async function processJob(job: IJob) {
   }
 
 
-  const context = await worker.handler(job.context);
+  const wordResultContext = await worker.handler(job.context);
 
-  job.context = context;
+  job.context = Object.assign(job.context, wordResultContext);
 
 
   const nextWork = job.works[ job.history.length ];
@@ -144,7 +155,7 @@ async function processJob(job: IJob) {
   job.history.push({
     status: job.status,
     work: job.work,
-    context,
+    context: job.context,
     createdAt: Date.now(),
   });
 

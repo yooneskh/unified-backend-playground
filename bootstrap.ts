@@ -1,16 +1,9 @@
-import { registerWorker, startJobQueue, submitJob } from './unified-jobs/mod.ts';
+import './modules/ping/mod.ts';
+
+
+import { startJobQueue } from './unified-jobs/mod.ts';
 
 startJobQueue();
-
-
-registerWorker({
-  work: 'ping',
-  handler() {
-    return {
-      message: 'pong',
-    };
-  },
-});
 
 
 import { UnifiedWebServer } from './deps.ts';
@@ -18,16 +11,23 @@ import { UnifiedWebServer } from './deps.ts';
 const app = new UnifiedWebServer();
 
 
+import { submitJob } from './unified-jobs/mod.ts';
+
 app.route({
   method: 'get',
   path: '/ping',
-  async handler(_, _context) {
+  async handler() {
 
-    const result = await submitJob({
-      works: ['ping'],
-    });
-
-    return Response.json(result);
+    try {
+      return Response.json(
+        await submitJob({
+          works: ['ping'],
+        })
+      );
+    }
+    catch (error) {
+      return Response.json(error);
+    }
 
   }
 });
