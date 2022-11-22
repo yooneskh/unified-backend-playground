@@ -1,5 +1,3 @@
-
-
 export {
   UnifiedRouter,
   UnifiedWebServer,
@@ -7,4 +5,4 @@ export {
 
 export {
   PatternEventEmitter,
-} from 'https://deno.land/x/unified_event_emitter@v0.3.0/mod.ts';
+} from 'https://deno.land/x/unified_event_emitter@v0.3.1/mod.ts';

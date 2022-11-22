@@ -82,7 +82,7 @@ export function submitJob({ works, context }: IJobSubmission): Promise<IWorkCont
 
     const rejecter = (_: string, doneJob: IJob) => {
       eventEmitter.clearCallback(resolver);
-      reject(doneJob.context);
+      reject(new Error(doneJob.rejectedFor));
     };
 
     eventEmitter.once(`job.finished.${job._id}`, resolver);
@@ -132,23 +132,32 @@ async function processJob(job: IJob) {
   }
 
 
-  const wordResultContext = await worker.handler(job.context);
+  try {
 
-  job.context = Object.assign(job.context, wordResultContext);
+    const wordResultContext = await worker.handler(job.context);
+
+    job.context = Object.assign(job.context, wordResultContext);
 
 
-  const nextWork = job.works[ job.history.length ];
+    const nextWork = job.works[ job.history.length ];
 
-  if (nextWork) {
+    if (nextWork) {
 
-    job.status = 'hopped';
-    job.work = nextWork;
+      job.status = 'hopped';
+      job.work = nextWork;
 
-    jobQueue.push(job);
+      jobQueue.push(job);
+
+    }
+    else {
+      job.status = 'finished';
+    }
 
   }
-  else {
-    job.status = 'finished';
+  catch (error) {
+    job.status = 'rejected';
+    job.rejectedAt = Date.now();
+    job.rejectedFor = error.message;
   }
 
 

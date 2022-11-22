@@ -1,37 +1,18 @@
-import './modules/ping/mod.ts';
-
-
-import { startJobQueue } from './unified-jobs/mod.ts';
-
-startJobQueue();
-
-
 import { UnifiedWebServer } from './deps.ts';
-
 const app = new UnifiedWebServer();
 
 
-import { submitJob } from './unified-jobs/mod.ts';
+import './modules/ping/mod.ts';
+import { registerPingRoutes } from './modules/ping/routes.ts';
+registerPingRoutes(app);
 
-app.route({
-  method: 'get',
-  path: '/ping',
-  async handler() {
+import './modules/authentication/jobs.ts';
+import { registerAuthenticationRoutes } from './modules/authentication/routes.ts';
+registerAuthenticationRoutes(app);
 
-    try {
-      return Response.json(
-        await submitJob({
-          works: ['ping'],
-        })
-      );
-    }
-    catch (error) {
-      return Response.json(error);
-    }
 
-  }
-});
-
+import { startJobQueue } from './unified-jobs/mod.ts';
+startJobQueue();
 
 app.listen({
   port: 8080,
